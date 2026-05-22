@@ -6,7 +6,9 @@ A smart task manager built with Flutter that combines voice input, AI-powered su
 
 ## 📺 Demo
 
-[![Watch the demo]([https://img.shields.io/badge/YouTube-Watch%20Demo-red?style=for-the-badge&logo=youtube)](https://youtu.be/rS6KpSlP69E](https://youtu.be/rS6KpSlP69E))
+[![Watch the demo](https://img.shields.io/badge/YouTube-Watch%20Demo-red?style=for-the-badge&logo=youtube)](https://youtu.be/rS6KpSlP69E)
+
+▶️ [https://youtu.be/rS6KpSlP69E](https://youtu.be/rS6KpSlP69E)
 
 ---
 
