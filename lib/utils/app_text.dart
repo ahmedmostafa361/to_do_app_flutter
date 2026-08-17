@@ -129,4 +129,37 @@ class AppTextStyle {
     fontSize: 24,
     fontWeight: FontWeight.w800,
   );
+
+  // ─── Design System additions (see design_system.md) ───────────────────
+
+  // Task title — Manrope, matches the app's headline family
+  static final TextStyle bold16Black = GoogleFonts.manrope(
+    color: AppColors.blackColor,
+    fontSize: 16,
+    fontWeight: FontWeight.bold,
+  );
+
+  // AI message — Inter Medium, uses the AI/Voice accent so Groq-generated
+  // content is visually distinct from user-entered content at a glance
+  static final TextStyle medium15AIPrimary = GoogleFonts.inter(
+    color: AppColors.aiPrimaryColor,
+    fontSize: 15,
+    fontWeight: FontWeight.w500,
+  );
+
+  // Error message — Inter Medium, small, uses the new error color
+  static final TextStyle medium13Error = GoogleFonts.inter(
+    color: AppColors.errorColor,
+    fontSize: 13,
+    fontWeight: FontWeight.w500,
+  );
+
+  // Priority chip label — color intentionally omitted here; set it per
+  // instance with .copyWith(color: AppColors.priorityLowColor / etc.)
+  // since one priority chip can render three different colors
+  static final TextStyle bold11Tracking = GoogleFonts.manrope(
+    fontSize: 11,
+    fontWeight: FontWeight.bold,
+    letterSpacing: 1.4,
+  );
 }
