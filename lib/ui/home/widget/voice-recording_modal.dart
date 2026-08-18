@@ -8,6 +8,7 @@ import '../../../core/services/speech_service.dart';
 import '../../../providers/notes_provider.dart';
 import '../../../utils/app_colors.dart';
 import '../../../utils/app_text.dart';
+import '../../../utils/app_theme.dart';
 
 enum _VoiceState { idle, listening, processing, done, error }
 
@@ -25,7 +26,8 @@ class VoiceRecordingModal extends StatefulWidget {
   State<VoiceRecordingModal> createState() => _VoiceRecordingModalState();
 }
 
-class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
+class _VoiceRecordingModalState extends State<VoiceRecordingModal>
+    with SingleTickerProviderStateMixin {
   _VoiceState _state = _VoiceState.idle;
   String _liveText = '';
   String _finalText = '';
@@ -38,14 +40,29 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
 
   StreamSubscription<String>? _streamSub;
 
+  // Drives the pulsing rings behind the mic while listening. Purely
+  // visual — never touches the speech/AI flow below.
+  late final AnimationController _pulseController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+  }
+
   @override
   void dispose() {
     _streamSub?.cancel();
+    _pulseController.dispose();
     super.dispose();
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Flow
+  // Flow — UNCHANGED except two _pulseController.repeat()/.stop()
+  // calls added right alongside the existing state transitions.
   // ─────────────────────────────────────────────────────────────
 
   Future<void> _startFlow() async {
@@ -58,6 +75,7 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
       _savedContent = '';
       _savedTags = [];
     });
+    _pulseController.repeat();
 
     try {
       final speech = context.read<SpeechService>();
@@ -78,6 +96,7 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
       if (text.trim().isEmpty)
         throw Exception('Nothing recognised. Please try again.');
 
+      _pulseController.stop();
       setState(() {
         _finalText = text;
         _liveText = text;
@@ -113,6 +132,7 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
       await Future.delayed(const Duration(milliseconds: 1500));
       if (mounted) Navigator.pop(context);
     } catch (e) {
+      _pulseController.stop();
       await _streamSub?.cancel();
       _streamSub = null;
 
@@ -143,6 +163,10 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
   Widget build(BuildContext context) {
     final w = widget.width;
     final h = widget.height;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final mutedColor =
+    isDark ? AppColors.textSecondaryColorDark : AppColors.greyColor;
 
     return Container(
       height: h,
@@ -159,48 +183,80 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
                 : _state == _VoiceState.listening
                 ? _stop
                 : null,
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 400),
-                  width: _state == _VoiceState.listening ? w * 0.30 : w * 0.24,
-                  height: _state == _VoiceState.listening ? w * 0.30 : w * 0.24,
-                  decoration: BoxDecoration(
-                    color: _ringColor.withOpacity(0.15),
-                    shape: BoxShape.circle,
+            child: SizedBox(
+              width: w * 0.4,
+              height: w * 0.4,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  // Pulsing waveform rings — only while listening.
+                  if (_state == _VoiceState.listening)
+                    AnimatedBuilder(
+                      animation: _pulseController,
+                      builder: (context, _) {
+                        return Stack(
+                          alignment: Alignment.center,
+                          children: List.generate(2, (i) {
+                            final t = (_pulseController.value + i * 0.5) % 1.0;
+                            return Opacity(
+                              opacity: (1 - t) * 0.35,
+                              child: Container(
+                                width: w * 0.24 + (w * 0.16 * t),
+                                height: w * 0.24 + (w * 0.16 * t),
+                                decoration: BoxDecoration(
+                                  color: _ringColor,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            );
+                          }),
+                        );
+                      },
+                    ),
+
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 400),
+                    width:
+                    _state == _VoiceState.listening ? w * 0.30 : w * 0.24,
+                    height:
+                    _state == _VoiceState.listening ? w * 0.30 : w * 0.24,
+                    decoration: BoxDecoration(
+                      color: _ringColor.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                ),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  width: w * 0.20,
-                  height: w * 0.20,
-                  decoration: BoxDecoration(
-                    color: _ringColor,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: _ringColor.withOpacity(0.35),
-                        blurRadius: w * 0.06,
-                        offset: Offset(0, w * 0.015),
-                      ),
-                    ],
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    width: w * 0.20,
+                    height: w * 0.20,
+                    decoration: BoxDecoration(
+                      color: _ringColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _ringColor.withOpacity(0.35),
+                          blurRadius: w * 0.06,
+                          offset: Offset(0, w * 0.015),
+                        ),
+                      ],
+                    ),
+                    child: _micContent(w),
                   ),
-                  child: _micContent(w),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
 
           SizedBox(height: h * 0.05),
 
-          // ── Status ──
+          // ── Status — color now reflects the current state ──
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 250),
             child: Text(
               _statusText,
               key: ValueKey(_statusText),
-              style: AppTextStyle.bold24PrimaryAnimated,
+              style: AppTextStyle.bold24PrimaryAnimated.copyWith(
+                  color: _ringColor),
             ),
           ),
 
@@ -215,10 +271,18 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
           const Spacer(),
 
           if (_state == _VoiceState.listening)
-            _actionButton(w, h, 'Stop', Icons.stop_rounded, _stop),
+            _actionButton(w, h, 'Stop', Icons.stop_rounded, _stop,
+                background: _ringColor),
 
           if (_state == _VoiceState.error)
-            _actionButton(w, h, 'Try Again', Icons.refresh_rounded, _startFlow),
+            _actionButton(
+              w,
+              h,
+              'Try Again',
+              Icons.refresh_rounded,
+              _startFlow,
+              background: theme.colorScheme.primary,
+            ),
 
           SizedBox(height: h * 0.02),
 
@@ -227,7 +291,10 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
               onPressed: _state == _VoiceState.listening
                   ? _cancel
                   : () => Navigator.pop(context),
-              child: Text('Cancel', style: AppTextStyle.bold16Grey),
+              child: Text(
+                'Cancel',
+                style: AppTextStyle.bold16Grey.copyWith(color: mutedColor),
+              ),
             ),
 
           SizedBox(height: h * 0.02),
@@ -241,59 +308,74 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
   // ─────────────────────────────────────────────────────────────
 
   Widget _buildContentArea(double w, double h) {
+    final isDark = Theme
+        .of(context)
+        .brightness == Brightness.dark;
+    final mutedColor =
+    isDark ? AppColors.textSecondaryColorDark : AppColors.greyColor;
+    final titleColor = isDark ? AppColors.textPrimaryColorDark : AppColors
+        .blackColor;
+    final success =
+    isDark ? AppColors.accentGreenColorDark : AppColors.accentGreenColor;
+    final error = isDark ? AppColors.errorColorDark : AppColors.errorColor;
+
     switch (_state) {
-      // ── Idle ────────────────────────────────────────────────
+    // ── Idle ────────────────────────────────────────────────
       case _VoiceState.idle:
         return Text(
           'Tap the mic and speak your task',
-          style: AppTextStyle.regular18GreyItalic,
+          style: AppTextStyle.regular18GreyItalic.copyWith(color: mutedColor),
           textAlign: TextAlign.center,
         );
 
-      // ── Listening: raw live words ────────────────────────────
+    // ── Listening: raw live words ────────────────────────────
       case _VoiceState.listening:
         return AnimatedSwitcher(
           duration: const Duration(milliseconds: 100),
           child: _liveText.isNotEmpty
               ? Text(
-                  '"$_liveText"',
-                  key: ValueKey(_liveText),
-                  style: AppTextStyle.regular18GreyItalic,
-                  textAlign: TextAlign.center,
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                )
+            _liveText,
+            key: ValueKey(_liveText),
+            style: AppTextStyle.regular18GreyItalic.copyWith(color: titleColor),
+            textAlign: TextAlign.center,
+            maxLines: 4,
+            overflow: TextOverflow.ellipsis,
+          )
               : Text(
-                  'Speak your task clearly...',
-                  style: AppTextStyle.regular18GreyItalic,
-                ),
+            'Speak your task clearly...',
+            style: AppTextStyle.regular18GreyItalic.copyWith(color: mutedColor),
+          ),
         );
 
-      // ── Processing ───────────────────────────────────────────
+    // ── Processing ───────────────────────────────────────────
       case _VoiceState.processing:
         return Column(
           children: [
             Text(
               '"$_finalText"',
-              style: AppTextStyle.regular18GreyItalic,
+              style: AppTextStyle.regular18GreyItalic.copyWith(
+                  color: titleColor),
               textAlign: TextAlign.center,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
             ),
             SizedBox(height: h * 0.01),
-            Text('Building your task...', style: AppTextStyle.regular16Grey),
+            Text(
+              'Building your task...',
+              style: AppTextStyle.regular16Grey.copyWith(color: mutedColor),
+            ),
           ],
         );
 
-      // ── Done: show title vs description side by side ─────────
+    // ── Done: show title vs description side by side ─────────
       case _VoiceState.done:
         return Container(
           width: double.infinity,
           padding: EdgeInsets.all(w * 0.045),
           decoration: BoxDecoration(
-            color: Colors.green.shade50,
-            borderRadius: BorderRadius.circular(w * 0.04),
-            border: Border.all(color: Colors.green.shade200),
+            color: success.withOpacity(isDark ? 0.12 : 0.08),
+            borderRadius: AppRadius.cardRadius,
+            border: Border.all(color: success.withOpacity(0.3)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -301,23 +383,20 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
               // Header
               Row(
                 children: [
-                  Icon(
-                    Icons.check_circle_rounded,
-                    color: Colors.green.shade500,
-                    size: w * 0.05,
-                  ),
+                  Icon(Icons.check_circle_rounded, color: success,
+                      size: w * 0.05),
                   SizedBox(width: w * 0.02),
                   Text(
                     'Saved to your tasks',
                     style: AppTextStyle.regular16Grey.copyWith(
-                      color: Colors.green.shade700,
+                      color: success,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
               ),
 
-              Divider(color: Colors.green.shade100, height: h * 0.025),
+              Divider(color: success.withOpacity(0.2), height: h * 0.025),
 
               // Title row
               _savedRow(
@@ -326,6 +405,8 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
                 icon: Icons.title_rounded,
                 label: 'Title',
                 value: _savedTitle,
+                accent: success,
+                textColor: titleColor,
               ),
 
               SizedBox(height: h * 0.012),
@@ -337,6 +418,8 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
                 icon: Icons.notes_rounded,
                 label: 'Description',
                 value: _savedContent,
+                accent: success,
+                textColor: titleColor,
               ),
 
               // Tags
@@ -345,11 +428,7 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      Icons.sell_rounded,
-                      color: AppColors.primaryColor,
-                      size: w * 0.04,
-                    ),
+                    Icon(Icons.sell_rounded, color: success, size: w * 0.04),
                     SizedBox(width: w * 0.02),
                     Expanded(
                       child: Wrap(
@@ -363,17 +442,17 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
                                   vertical: w * 0.01,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primaryColor.withOpacity(
-                                    0.1,
-                                  ),
-                                  borderRadius: BorderRadius.circular(w * 0.02),
+                                  color: success.withOpacity(0.12),
+                                  borderRadius: AppRadius.chipRadius,
                                 ),
                                 child: Text(
                                   tag,
-                                  style: AppTextStyle.bold10Primary,
+                                  style:
+                                  AppTextStyle.bold10Primary.copyWith(
+                                      color: success),
                                 ),
                               ),
-                            )
+                        )
                             .toList(),
                       ),
                     ),
@@ -384,47 +463,40 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
           ),
         );
 
-      // ── Error ────────────────────────────────────────────────
+    // ── Error ────────────────────────────────────────────────
       case _VoiceState.error:
         return Text(
           _errorMessage,
-          style: AppTextStyle.regular16Grey.copyWith(
-            color: Colors.red.shade400,
-          ),
+          style: AppTextStyle.regular16Grey.copyWith(color: error),
           textAlign: TextAlign.center,
         );
     }
   }
 
   /// One labelled row inside the done card.
-  Widget _savedRow(
-    double w,
-    double h, {
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
+  Widget _savedRow(double w,
+      double h, {
+        required IconData icon,
+        required String label,
+        required String value,
+        required Color accent,
+        required Color textColor,
+      }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, color: AppColors.primaryColor, size: w * 0.04),
+        Icon(icon, color: accent, size: w * 0.04),
         SizedBox(width: w * 0.02),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: AppTextStyle.bold11Grey.copyWith(
-                  color: AppColors.primaryColor,
-                ),
-              ),
+              Text(label,
+                  style: AppTextStyle.bold11Grey.copyWith(color: accent)),
               SizedBox(height: h * 0.003),
               Text(
                 value,
-                style: AppTextStyle.regular16Grey.copyWith(
-                  color: Colors.black87,
-                ),
+                style: AppTextStyle.regular16Grey.copyWith(color: textColor),
                 maxLines: 3,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -451,10 +523,7 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
     }
     if (_state == _VoiceState.done) {
       return Icon(
-        Icons.check_rounded,
-        color: AppColors.whiteColor,
-        size: w * 0.09,
-      );
+          Icons.check_rounded, color: AppColors.whiteColor, size: w * 0.09);
     }
     return Icon(
       _state == _VoiceState.listening ? Icons.mic : Icons.mic_none_rounded,
@@ -463,23 +532,21 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
     );
   }
 
-  Widget _actionButton(
-    double w,
-    double h,
-    String label,
-    IconData icon,
-    Future<void> Function() onTap,
-  ) {
+  Widget _actionButton(double w,
+      double h,
+      String label,
+      IconData icon,
+      Future<void> Function() onTap, {
+        required Color background,
+      }) {
     return ElevatedButton.icon(
       onPressed: onTap,
       icon: Icon(icon, color: AppColors.whiteColor, size: w * 0.05),
       label: Text(label, style: AppTextStyle.bold16White),
       style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.primaryColor,
+        backgroundColor: background,
         minimumSize: Size(w, h * 0.065),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(w * 0.03),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: AppRadius.buttonRadius),
         elevation: 0,
       ),
     );
@@ -501,17 +568,28 @@ class _VoiceRecordingModalState extends State<VoiceRecordingModal> {
   }
 
   Color get _ringColor {
+    final isDark = Theme
+        .of(context)
+        .brightness == Brightness.dark;
+    final primary = Theme
+        .of(context)
+        .colorScheme
+        .primary;
+    final error = isDark ? AppColors.errorColorDark : AppColors.errorColor;
+    final success =
+    isDark ? AppColors.accentGreenColorDark : AppColors.accentGreenColor;
+
     switch (_state) {
       case _VoiceState.listening:
-        return Colors.red.shade400;
+        return error;
       case _VoiceState.processing:
-        return AppColors.primaryColor.withOpacity(0.7);
+        return primary.withOpacity(0.7);
       case _VoiceState.done:
-        return Colors.green.shade400;
+        return success;
       case _VoiceState.error:
-        return Colors.red.shade300;
+        return error.withOpacity(0.85);
       case _VoiceState.idle:
-        return AppColors.primaryColor;
+        return primary;
     }
   }
 }
